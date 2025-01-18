@@ -1,0 +1,172 @@
+import cv2
+import pygame
+# from djitellopy import Tello
+
+# Intialize webcam (slow): This will be different for the drone camera!!
+print("\nInitializing webcam (this may take a few seconds)")
+webcam = cv2.VideoCapture(0)
+if not webcam.isOpened():
+    print("Error: Could not open webcam.")
+    exit()
+width = int(webcam.get(cv2.CAP_PROP_FRAME_WIDTH))
+height = int(webcam.get(cv2.CAP_PROP_FRAME_HEIGHT))
+FPS = int(webcam.get(cv2.CAP_PROP_FPS))
+print(f"Webcam is {width}x{height} at {FPS} FPS")
+
+# You must do this initialization before most pygame things will work
+SCREEN_WIDTH = 960
+SCREEN_HEIGHT = 720
+pygame.init()
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+clock = pygame.time.Clock()
+
+# Initialize common colors
+COLOR_BLACK = (0, 0, 0) 
+COLOR_WHITE = (255, 255, 255)
+COLOR_GREEN = (64, 255, 64)
+COLOR_GRAY = (64, 64, 64)
+
+# Initialize font for placing text on the screen
+font = pygame.font.Font('freesansbold.ttf', 24)
+
+# Make an all black surface (black is default color: 0,0,0)
+background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+
+# Initialize mouse variables
+mouse_pos = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+mouse_drag = False
+mouse_grid = 50
+
+# Initialize our opening screen logo
+logo_surface = pygame.image.load('logo.jpg')
+logo_rect = logo_surface.get_rect()
+logo_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+show_logo = True
+
+# Initialize a small space ship sprite
+# Credit to Skorpio ( http://opengameart.org/users/skorpio )
+ship_surface = pygame.image.load('spaceship1.bmp')
+ship_surface.set_colorkey((255, 255, 255))
+ship_surface = ship_surface.convert_alpha()
+old_size = ship_surface.get_size()
+new_size = (old_size[0] // 4, old_size[1] // 4)
+ship_surface = pygame.transform.smoothscale(ship_surface, new_size)
+ship_rect = ship_surface.get_rect()
+ship_rect.topleft = (10, 10)
+
+# Initialize drone
+velocity_x = 0
+velocity_y = 0
+velocity_z = 0
+rotation = 0
+#drone = Tello()
+#drone.connect()
+#drone.takeoff()
+
+# Run the game loop
+running = True
+while running:
+
+    # Cycle through all of the current events
+    for event in pygame.event.get():
+
+        # User clicked the X to close program
+        if event.type == pygame.QUIT:
+            running = False
+
+        # Special one-time keys: SPACE -> 'boom' and ESC -> Quit
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                show_logo = not show_logo
+            if event.key == pygame.K_ESCAPE:
+                running = False            
+
+        # One of the most common mouse events
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                mouse_pos = pygame.mouse.get_pos()
+            elif event.button == 3:
+
+################################################################################
+
+                if ship_rect.collidepoint(event.pos):
+                    mouse_drag = True
+                    offset_x = ship_rect.x - event.pos[0]
+                    offset_y = ship_rect.y - event.pos[1]
+
+        if event.type == pygame.MOUSEMOTION and mouse_drag:
+            # Move the ship with the mouse, but maintain relative position 
+            ship_rect.x = event.pos[0] + offset_x
+            ship_rect.y = event.pos[1] + offset_y
+
+        if event.type == pygame.MOUSEBUTTONUP:
+            # Snap to grid (always goes to upper-left and keeps on screen)
+            if mouse_drag:
+                ship_rect.x = (ship_rect.x // mouse_grid) * mouse_grid
+                ship_rect.y = (ship_rect.y // mouse_grid) * mouse_grid
+                ship_rect.left = max(ship_rect.left, 0)
+                ship_rect.top = max(ship_rect.top, 0)
+                ship_rect.right = min(ship_rect.right, SCREEN_WIDTH)
+                ship_rect.bottom = min(ship_rect.bottom, SCREEN_HEIGHT)
+            mouse_drag = False
+
+################################################################################
+
+    # Capture all of the simultaneously pressed keys
+    # Notice that we are no longer in pygame.event.get() loop!
+    keys = pygame.key.get_pressed()
+
+    # Full throttle all the time!
+    if keys[pygame.K_UP] and keys[pygame.K_DOWN]:
+        velocity_x = 0
+    elif keys[pygame.K_UP]:
+        velocity_x = 100
+    elif keys[pygame.K_DOWN]:
+        velocity_x = -100
+    else:
+        velocity_x = 0
+
+    # Place surfaces on the screen but don't display them (order matters)
+    # Internally this will use depth calculations to create the final image
+    screen.blit(background, (0, 0))
+
+    if show_logo:
+        screen.blit(logo_surface, logo_rect)   
+    else:
+        # Read a frame from the webcam
+        ret, frame = webcam.read()
+        if not ret:
+            print("Error reading camera frame")
+
+        # Convert the frame from BGR (OpenCV format) to RGB (Pygame format)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # Create a surface from the current picture and rotate it to match display
+        webcam_surface = pygame.surfarray.make_surface(frame)
+        webcam_surface = pygame.transform.rotate(webcam_surface, -90)
+        webcam_rect = webcam_surface.get_rect()
+        webcam_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+        screen.blit(webcam_surface, webcam_rect)
+
+    # Cannot display text directly, must render it to a pygame surface
+    text_message = f"({velocity_x}, {velocity_y}, {velocity_z}) at {rotation}°"
+    text_surface = font.render(text_message, True, COLOR_GREEN, COLOR_GRAY)
+    text_rect = text_surface.get_rect()
+    text_rect.center = mouse_pos
+    screen.blit(text_surface, text_rect)
+
+    # Draw the spaceship icon
+    screen.blit(ship_surface, ship_rect)
+
+    # Draw the current frame on the screen
+    pygame.display.update()
+
+    # Set a consistent speed that is resonable and matches our camera
+    clock.tick(FPS)
+
+
+# Close down everything
+webcam.release()
+#drone.land()
+#drone.end()
+pygame.quit()
